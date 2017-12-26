@@ -1,9 +1,6 @@
 #!/usr/bin/fsharpi
 
-type Layer = { Depth : int ; Range : int ; ScannerPosition : int ; ScannerDirection : int }
-
-let sprintLayer layer =
-    sprintf "(%i, %i, %i, %i)" layer.Depth layer.Range layer.ScannerPosition layer.ScannerDirection
+type Layer = { Depth : int ; Range : int }
 
 let parseLayer (str : string) =
     //88: 20
@@ -12,40 +9,37 @@ let parseLayer (str : string) =
         failwithf "Invalid layer string: %s" str
     let layerId = int parts.[0]
     let range = int parts.[1]
-    { Depth = layerId ; Range = range ; ScannerPosition = 0 ; ScannerDirection = 1 }
+    { Depth = layerId ; Range = range }
 
 let parseLayers lines =
     lines
     |> Seq.map (parseLayer)
     |> List.ofSeq
 
-let advanceLayers layers =
-    layers
-    |> List.map (fun layer ->
-        let newPosition = layer.ScannerPosition + layer.ScannerDirection
-        let newDirection =
-            if (newPosition = layer.Range - 1) || (newPosition = 0) then
-                layer.ScannerDirection * -1
-            else
-                layer.ScannerDirection
-        { layer with ScannerPosition = newPosition ; ScannerDirection = newDirection }
-    )
+let getScannerPosition time range =
+    if time < 0 then
+        invalidArg "time" (sprintf "time of %i is not valid - must be greater than or equal to 0" time)
+    elif range <= 0 then
+        invalidArg "range" (sprintf "range of %i is not valid - must be greater than 0" range)
+    elif range = 1 then
+        0
+    else
+        let i = time % ((2*range)-2)
+        if i < range then i else (2*(range-1)) - i
 
-let getDetected position layers =
-    layers
-    |> List.filter (fun layer -> layer.Depth = position && layer.ScannerPosition = 0)
+let getDetected time position layers =
+        layers
+        |> List.filter (fun l -> l.Depth = position && (getScannerPosition time l.Range) = 0)
 
-let getDetections layers =
-    let maxPosition =
-        (layers |> List.maxBy (fun layer -> layer.Depth)).Depth
-        
-    let detections, _ =
-        [ 0..maxPosition+1 ]
-        |> List.fold (fun (detections, ls) position ->
-            //printfn "position: %i\nls: %A\ndetections: %A\n" position (ls |> List.map (sprintLayer)) (detections |> List.map (sprintLayer))
-            let newDetections = (getDetected position ls) @ detections
-            let newLayers = advanceLayers ls
-            (newDetections, newLayers)) ([], layers)
+let getDetections (layers : Layer list) : Layer list =
+    let maxPosition = (layers |> List.maxBy (fun layer -> layer.Depth)).Depth
+    let detections =
+        [ 0..(maxPosition+1) ]
+        |> List.fold (fun detections position ->
+            let time = position // move one position per tick
+            let newDetections = (getDetected time position layers) @ detections
+            newDetections
+            ) []
     detections
 
 
@@ -54,8 +48,9 @@ let fileName = fsi.CommandLineArgs.[1]
 let lines = System.IO.File.ReadAllLines(fileName)
 
 let layers = parseLayers lines
-let detections = getDetections layers
 
+printfn "Calculating..."
+let detections = getDetections layers
 let severities : int list =
     detections
     |> List.map (fun (layer) -> layer.Depth * layer.Range)
